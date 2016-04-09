@@ -1,0 +1,247 @@
+--- c13_core.asm	2016-03-30 19:51:34.721491000 +0800
++++ c13_core_new.asm	2016-04-09 20:01:52.894746200 +0800
+@@ -2,7 +2,7 @@
+          ;文件名：c13_core.asm
+          ;文件说明：保护模式微型核心程序 
+          ;创建日期：2011-10-26 12:11
+-
++		 
+          ;以下常量定义部分。内核的大部分内容都应当固定 
+          core_code_seg_sel     equ  0x38    ;内核代码段选择子
+          core_data_seg_sel     equ  0x30    ;内核数据段选择子 
+@@ -10,6 +10,12 @@
+          video_ram_seg_sel     equ  0x20    ;视频显示缓冲区的段选择子
+          core_stack_seg_sel    equ  0x18    ;内核堆栈段选择子
+          mem_0_4_gb_seg_sel    equ  0x08    ;整个0-4GB内存的段的选择子
++		 
++		 ;字符属性（都是黑底）
++		 GREEN         equ 0x02
++         RED           equ 0x04
++         BLUE_LIGHT    equ 0x09
++         YELLOW        equ 0x0e
+ 
+ ;-------------------------------------------------------------------------------
+          ;以下是系统核心的头部，用于加载核心程序 
+@@ -33,10 +39,60 @@
+ ;===============================================================================
+ SECTION sys_routine vstart=0                ;系统公共例程代码段 
+ ;-------------------------------------------------------------------------------
+-         ;字符串显示例程
++%ifdef DEBUG
++
++put_core_salt:  ;打印内核的符号
++		push ecx
++		mov ebp,esp
++		mov ch,[ebp+3*4]
++	.getc:    ;本地Label
++		mov cl,[ebx]
++		or cl,cl
++		jz .out
++		call put_char
++		inc ebx
++		jmp .getc
++	.out:
++		mov cl,0x0d
++		call put_char
++		mov cl,0x0a
++		call put_char
++		
++		pop ecx
++		retf 4
++
++put_usr_salt:  ;打印用户的符号
++		push ecx
++		mov ebp,esp
++		mov ch,[ebp+3*4]
++	.getc:    ;本地Label
++		mov cl,[es:ebx]
++		or cl,cl
++		jz .out
++		call put_char
++		inc ebx
++		jmp .getc
++	.out:
++		mov cl,0x20
++		call put_char
++		call put_char
++		call put_char
++		call put_char ;打印四个空格
++	
++		pop ecx
++		retf 4
++
++%endif
++
++		                                    ;字符串显示例程
+ put_string:                                 ;显示0终止的字符串并移动光标 
+-                                            ;输入：DS:EBX=串地址
++                                            ;输入：(1)  push 属性值
++											;      (2)  DS:EBX=串地址
++											
+          push ecx
++		 
++		 mov ebp,esp
++		 mov ch,[ebp+3*4]  ;取得属性
+   .getc:
+          mov cl,[ebx]
+          or cl,cl
+@@ -47,12 +103,12 @@
+ 
+   .exit:
+          pop ecx
+-         retf                               ;段间返回
++         retf 4                              ;段间返回
+ 
+ ;-------------------------------------------------------------------------------
+ put_char:                                   ;在当前光标处显示一个字符,并推进
+                                             ;光标。仅用于段内调用 
+-                                            ;输入：CL=字符ASCII码 
++                                            ;输入：CL=字符ASCII码, CH=属性 
+          pushad
+ 
+          ;以下取当前光标位置
+@@ -90,7 +146,7 @@
+          mov eax,video_ram_seg_sel          ;0xb8000段的选择子
+          mov es,eax
+          shl bx,1
+-         mov [es:bx],cl
++         mov [es:bx],cx                     ;显示字符和属性
+          pop es
+ 
+          ;以下将光标位置推进一个字符
+@@ -109,7 +165,7 @@
+          cld
+          mov esi,0xa0                       ;小心！32位模式下movsb/w/d 
+          mov edi,0x00                       ;使用的是esi/edi/ecx 
+-         mov ecx,1920
++         mov ecx,960                        ;80*24*2/4=960
+          rep movsd
+          mov bx,3840                        ;清除屏幕最底一行
+          mov ecx,80                         ;32位程序应该使用ECX
+@@ -205,6 +261,22 @@
+                                             ;输出：无
+          pushad
+          push ds
++		 
++		 mov ebp,esp
++		 mov edx,[ebp+11*4]   ;获得要显示的值
++		 mov ch,0x0b          ;亮青色
++		  
++	.p_char:
++		 mov cl,[ebp+12*4]
++		 or cl,cl
++		 jz .ok
++		 call put_char
++		 inc ebp
++		 jmp .p_char
++	.ok:
++		 mov cl,'='
++		 call put_char
++		
+       
+          mov ax,core_data_seg_sel           ;切换到核心数据段 
+          mov ds,ax
+@@ -218,15 +290,21 @@
+          xlat
+       
+          push ecx
+-         mov cl,al                           
++         mov cl,al   
++		 mov ch,0x0b  ;亮青色
+          call put_char
+          pop ecx
+        
+          loop .xlt
++		 
++		 mov cl,0x0d
++		 call put_char
++		 mov cl,0x0a
++		 call put_char  ;打印换行
+       
+          pop ds
+          popad
+-         retf
++         retf 8
+       
+ ;-------------------------------------------------------------------------------
+ allocate_memory:                            ;分配内存
+@@ -493,6 +571,16 @@
+          push edi
+          push esi
+          push ecx
++		 
++%ifdef DEBUG    ;打印将要比较的用户符号和内核符号
++		 mov ebx,edi
++		 push YELLOW
++		 call sys_routine_seg_sel:put_usr_salt  ;打印用户符号
++		 
++		 mov ebx,esi
++		 push RED
++		 call sys_routine_seg_sel:put_core_salt ;打印内核符号
++%endif
+ 
+          mov ecx,64                         ;检索表中，每条目的比较次数 
+          repe cmpsd                         ;每次比较4字节 
+@@ -501,6 +589,9 @@
+          mov [es:edi-256],eax               ;将字符串改写成偏移地址 
+          mov ax,[esi+4]
+          mov [es:edi-252],ax                ;以及段选择子 
++		 
++		 add esp,12
++		 jmp .b5                            ;跳出内循环，进入下一轮外循环,相当于 C语言的break
+   .b4:
+       
+          pop ecx
+@@ -508,7 +599,7 @@
+          add esi,salt_item_len
+          pop edi                            ;从头比较 
+          loop .b3
+-      
++  .b5:  
+          pop edi
+          add edi,256
+          pop ecx
+@@ -531,7 +622,8 @@
+ start:
+          mov ecx,core_data_seg_sel           ;使ds指向核心数据段 
+          mov ds,ecx
+-
++		 
++		 push GREEN
+          mov ebx,message_1
+          call sys_routine_seg_sel:put_string
+                                          
+@@ -557,19 +649,24 @@
+          mov [cpu_brand + 0x28],ecx
+          mov [cpu_brand + 0x2c],edx
+ 
++		 push YELLOW
+          mov ebx,cpu_brnd0
+          call sys_routine_seg_sel:put_string
++		 push YELLOW
+          mov ebx,cpu_brand
+          call sys_routine_seg_sel:put_string
++		 push YELLOW
+          mov ebx,cpu_brnd1
+          call sys_routine_seg_sel:put_string
+ 
++		 push RED
+          mov ebx,message_5
+          call sys_routine_seg_sel:put_string
+          mov esi,50                          ;用户程序位于逻辑50扇区 
+          call load_relocate_program
+       
+-         mov ebx,do_status
++         push RED
++		 mov ebx,do_status
+          call sys_routine_seg_sel:put_string
+       
+          mov [esp_pointer],esp               ;临时保存堆栈指针
+@@ -587,6 +684,7 @@
+          mov ss,eax 
+          mov esp,[esp_pointer]
+ 
++		 push RED
+          mov ebx,message_6
+          call sys_routine_seg_sel:put_string
+ 

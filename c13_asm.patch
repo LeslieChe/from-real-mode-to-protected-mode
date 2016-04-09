@@ -1,0 +1,70 @@
+--- c13.asm	2016-03-30 19:52:01.799039800 +0800
++++ c13_new.asm	2016-04-09 18:18:05.459557200 +0800
+@@ -2,6 +2,12 @@
+          ;文件名：c13.asm
+          ;文件说明：用户程序 
+          ;创建日期：2011-10-30 15:19   
++		 
++		 ;字符属性（都是黑底）
++		 GREEN         equ 0x02
++         RED           equ 0x04
++         BLUE_LIGHT    equ 0x09
++         YELLOW        equ 0x0e
+          
+ ;===============================================================================
+ SECTION header vstart=0
+@@ -34,7 +40,8 @@
+                      
+          ReadDiskData     db  '@ReadDiskData'
+                      times 256-($-ReadDiskData) db 0
+-                 
++		 put_hex_dword    db  '@PrintDwordAsHexString'
++                     times 256-($-put_hex_dword) db 0
+ header_end:
+ 
+ ;===============================================================================
+@@ -46,6 +53,7 @@
+                            db  '**********User program is runing**********'
+                            db  0x0d,0x0a,0
+          message_2         db  '  Disk data:',0x0d,0x0a,0
++		 message_new_line  db  0x0d,0x0a,0
+ 
+ data_end:
+ 
+@@ -64,18 +72,36 @@
+          mov eax,[data_seg]
+          mov ds,eax
+      
++	     push BLUE_LIGHT
+          mov ebx,message_1
+          call far [fs:PrintString]
+      
++	     
+          mov eax,100                         ;逻辑扇区号100
+          mov ebx,buffer                      ;缓冲区偏移地址
+          call far [fs:ReadDiskData]          ;段间调用
+      
++	     push BLUE_LIGHT
+          mov ebx,message_2
+          call far [fs:PrintString]
+      
++	     push BLUE_LIGHT
+          mov ebx,buffer 
+          call far [fs:PrintString]           ;too.
++		 
++		 ;打印寄存器的值
++		 push BLUE_LIGHT                     ;  换行，属性不重要
++         mov ebx,message_new_line
++         call far [fs:PrintString]
++		 
++		 push 'eax'
++		 push eax
++		 call far [fs:put_hex_dword]
++		 
++		 push 'ss'
++		 push ss
++		 call far [fs:put_hex_dword]
++		 
+      
+          jmp far [fs:TerminateProgram]       ;将控制权返回到系统 
+       
