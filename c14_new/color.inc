@@ -1,0 +1,6 @@
+; define some colors
+
+GREEN  EQU 0X02
+BLUE   EQU 0X09
+RED    EQU 0X04
+YELLOW EQU 0X0E
